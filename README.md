@@ -59,6 +59,22 @@ the same archive and checksum as durable release assets.
 
 ## Fabric configuration
 
+The four-node fabric uses **four 0.5 m Amphenol NJAAKK0006 DAC cables**
+(recorded supplier part `SF-NJAAKK0006-000.5M`), with one cable per edge:
+
+```text
+ node0 f0 +---------- cable D ----------+ f0 node3
+       f1 |                            | f1
+          | cable A            cable C |
+       f1 |                            | f1
+ node1 f0 +---------- cable B ----------+ f0 node2
+```
+
+Each node connects to two neighbours. Management Ethernet is separate.
+See [the full ASCII wiring layout and cable list](docs/fabric.md#physical-wiring-four-sparks-four-cables)
+for exact port-to-port connections, per-link addresses, RDMA device names,
+and the management wiring.
+
 Copy [`examples/fabric.env`](examples/fabric.env) once per node and fill in the
 two fabric interfaces, permanent MAC addresses, and addresses. Then render and
 apply the known-good Netplan shape:

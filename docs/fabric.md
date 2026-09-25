@@ -4,6 +4,107 @@ Each Spark in a four-node cycle has two fabric NICs, one for each direct
 neighbour. Give each physical link its own IPv4 `/24`. Keep rendezvous and NCCL
 bootstrap on the ordinary management LAN.
 
+## Physical wiring: four Sparks, four cables
+
+This is the four-Spark layout we have used. Node numbers follow the cycle
+`node0 -> node1 -> node2 -> node3 -> node0`. The drawing shows cable endpoints,
+not the left/right position of sockets when looking at the chassis.
+
+```text
+                  Cable D: cross link, 10.20.40.0/24
+          +------------------------------------------------+
+          | f0: 10.20.40.1                  f0: 10.20.40.4 |
+     +----+-------------+                    +-------------+----+
+     | node0 / rank 0   |                    | node3 / rank 3   |
+     | spark-1c24       |                    | spark-22d0       |
+     +----+-------------+                    +-------------+----+
+          | f1: 10.20.10.1                  f1: 10.20.30.4 |
+          |                                                |
+          | Cable A: pair                    Cable C: pair |
+          | 10.20.10.0/24                    10.20.30.0/24 |
+          |                                                |
+          | f1: 10.20.10.2                  f1: 10.20.30.3 |
+     +----+-------------+                    +-------------+----+
+     | node1 / rank 1   |                    | node2 / rank 2   |
+     | spark-d475       |                    | spark-3d5b       |
+     +----+-------------+                    +-------------+----+
+          | f0: 10.20.20.2                  f0: 10.20.20.3 |
+          +------------------------------------------------+
+                  Cable B: cross link, 10.20.20.0/24
+```
+
+There are no diagonal cables. Each node uses both fabric ports, one to each
+neighbour. The `spark-*` names identify our machines; substitute your own host
+names. The addresses below are a complete example: keep one distinct subnet
+per cable if changing them.
+
+| Cable | Endpoint A | Endpoint B | Role |
+|---|---|---|---|
+| A | node0 `enp1s0f1np1`, `10.20.10.1/24` | node1 `enp1s0f1np1`, `10.20.10.2/24` | Pair link |
+| B | node1 `enp1s0f0np0`, `10.20.20.2/24` | node2 `enp1s0f0np0`, `10.20.20.3/24` | Cross link |
+| C | node2 `enp1s0f1np1`, `10.20.30.3/24` | node3 `enp1s0f1np1`, `10.20.30.4/24` | Pair link |
+| D | node3 `enp1s0f0np0`, `10.20.40.4/24` | node0 `enp1s0f0np0`, `10.20.40.1/24` | Cross link, closes the cycle |
+
+### Cables we used
+
+The ring uses **four 0.5 m Amphenol direct-attach copper (DAC) cables**, one
+per edge. Our recorded supplier part is **`SF-NJAAKK0006-000.5M`**, with Amphenol
+part **`NJAAKK-0006` / `NJAAKK0006`**. No separate optical transceivers or fabric
+switch are needed.
+
+[NVIDIA's ConnectX-7 networking guide](https://docs.nvidia.com/dgx/dgx-spark/spark-clustering.html)
+lists NJAAKK0006 as the 0.5 m version of the approved NJAAKK-N911 cable
+(QSFP to QSFP112). Use the exact part number when sourcing the cable, rather
+than treating any cable advertised as "100G QSFP28" as equivalent.
+
+Our 24 September 2026 four-node capture reported `Speed: 200000Mb/s` on both
+fabric interfaces of every node. That is the negotiated link rate, not a
+claim of 200 Gb/s application throughput. The 0.5 m length suits our adjacent
+nodes; check the actual cable path and connector clearance in your layout.
+
+### Port names and per-node configuration
+
+| Drawing label | Linux interface used | RDMA device used |
+|---|---|---|
+| `f0` (cross) | `enp1s0f0np0` | `rocep1s0f0` |
+| `f1` (pair) | `enp1s0f1np1` | `rocep1s0f1` |
+
+These are the interface names on our systems. Verify your own mapping with
+`ibdev2netdev` and the permanent MAC addresses before applying configuration;
+do not infer a physical socket's identity from its position in the drawing.
+
+| Node | `FABRIC0_ADDRESS` (`f0`) | `FABRIC1_ADDRESS` (`f1`) |
+|---|---|---|
+| node0 | `10.20.40.1/24` | `10.20.10.1/24` |
+| node1 | `10.20.20.2/24` | `10.20.10.2/24` |
+| node2 | `10.20.20.3/24` | `10.20.30.3/24` |
+| node3 | `10.20.40.4/24` | `10.20.30.4/24` |
+
+[`examples/fabric.env`](../examples/fabric.env) starts with node0's addresses
+and placeholder MACs. Create a separate file for each node, replacing both
+MACs and using that node's row above. MTU is 9000 on all eight fabric ports.
+
+### Management wiring is separate
+
+Each Spark also has an ordinary Ethernet connection to our management LAN.
+This carries SSH, rendezvous, and NCCL bootstrap. The switchless description
+applies to the four RoCE cables above.
+
+```text
+ node0 management ----+
+ node1 management ----+---- management Ethernet switch ---- LAN / operator
+ node2 management ----+
+ node3 management ----+
+
+ 4 ordinary Ethernet patch leads, separate from the 4 fabric DACs
+ Management interface on our Sparks: enP7s7
+```
+
+Use the management interface for bootstrap and both fabric RDMA devices for
+NCCL data transport, following [the runtime contract](runtime.md). Do not put
+management addresses on the fabric interfaces. This four-node wiring does
+not include our separate two-Spark cluster.
+
 ## Why stale addresses break GID selection
 
 The mlx5 driver creates GID table entries as addresses appear. A node converted
