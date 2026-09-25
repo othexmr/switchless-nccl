@@ -59,8 +59,9 @@ the same archive and checksum as durable release assets.
 
 ## Fabric configuration
 
-The four-node fabric uses **four 0.5 m Amphenol NJAAKK0006 DAC cables**
-(recorded supplier part `SF-NJAAKK0006-000.5M`), with one cable per edge:
+The four-node fabric uses **four Amphenol DAC cables**, with one cable per
+edge. We have tested both **NJAAKK-N911 (0.4 m)** and **NJAAKK0006 (0.5 m)**
+(recorded supplier part `SF-NJAAKK0006-000.5M` for the latter):
 
 ```text
  node0 f0 +---------- cable D ----------+ f0 node3

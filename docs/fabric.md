@@ -47,10 +47,14 @@ per cable if changing them.
 
 ### Cables we used
 
-The ring uses **four 0.5 m Amphenol direct-attach copper (DAC) cables**, one
-per edge. Our recorded supplier part is **`SF-NJAAKK0006-000.5M`**, with Amphenol
-part **`NJAAKK-0006` / `NJAAKK0006`**. No separate optical transceivers or fabric
-switch are needed.
+The ring uses **four Amphenol direct-attach copper (DAC) cables**, one per
+edge. **We have used and tested both cable variants below on our Sparks.**
+No separate optical transceivers or fabric switch are needed.
+
+| Tested Amphenol part | Length | Identification |
+|---|---|---|
+| `NJAAKK-N911` | 0.4 m | Packaging label: `AHSP P/N NJAAKK-N911`, `QSFP/QSFP`, `0.4M` |
+| `NJAAKK-0006` / `NJAAKK0006` | 0.5 m | Recorded supplier part: `SF-NJAAKK0006-000.5M` |
 
 [NVIDIA's ConnectX-7 networking guide](https://docs.nvidia.com/dgx/dgx-spark/spark-clustering.html)
 lists NJAAKK0006 as the 0.5 m version of the approved NJAAKK-N911 cable
@@ -59,8 +63,9 @@ than treating any cable advertised as "100G QSFP28" as equivalent.
 
 Our 24 September 2026 four-node capture reported `Speed: 200000Mb/s` on both
 fabric interfaces of every node. That is the negotiated link rate, not a
-claim of 200 Gb/s application throughput. The 0.5 m length suits our adjacent
-nodes; check the actual cable path and connector clearance in your layout.
+claim of 200 Gb/s application throughput or a separate measurement for each
+cable variant. The tested 0.4 m and 0.5 m lengths suit our adjacent nodes; check
+the actual cable path and connector clearance in your layout.
 
 ### Port names and per-node configuration
 
