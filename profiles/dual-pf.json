@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "status": "source-reconstruction-only",
+  "nccl_revision": "73cf112295c33aee2b895f329f592f2a9b4b0f97",
+  "base_tree": "3e7de6f92f0190d1afe9f05642e634cbf43ae4c9",
+  "patched_tree": "6373893a20a873aec89c88b6a57b5df8142d6888",
+  "source_commit": "cbd2a32d17592d6480a781d06630c6a3325ea8d2",
+  "source_commit_role": "historical source snapshot before restoration of the predecessor's attribution comment; current reconstruction is pinned by patches and patched_tree",
+  "patches": [
+    {
+      "path": "patches/nccl-2.30.7-skip-tree-pat.patch",
+      "sha256": "097656d07a5774919f0d51558b51ec05de8168c0097ed6cb7764c33230ba6eb2"
+    },
+    {
+      "path": "patches/nccl-2.30.7-advertise-all-listener-gids.patch",
+      "sha256": "dccfce86d14c15c39f0e0a742863960205a3d9823c464b31a7f7389354844178"
+    },
+    {
+      "path": "patches/nccl-2.30.7-hardened-switchless.patch",
+      "sha256": "e2dd39eaefc022f99d5a3d3195e81947da20a4c7acbf1d688b4df8f6691c210c"
+    },
+    {
+      "path": "patches/nccl-2.30.7-dual-pf.patch",
+      "sha256": "18003f94606ac05a667c14024db6fbf775cf0f8753a4aa2a012c73be6f64b664"
+    }
+  ],
+  "historical_library": {
+    "sha256": "5d5c65502cd3d1336dd73b9dd3f1d584fc1289c79fd595f9605b8a6ac3caab7f",
+    "bytes": 61427896,
+    "cuda": "13.0",
+    "is_rebuild_guarantee": false
+  },
+  "required_environment": {
+    "NCCL_SWITCHLESS_RING_ONLY": "1",
+    "NCCL_ALGO": "Ring",
+    "NCCL_NET": "IB",
+    "NCCL_IB_DISABLE": "0",
+    "NCCL_IB_ADDR_FAMILY": "AF_INET",
+    "NCCL_IB_ADDR_RANGE": "10.100.224.0/22",
+    "NCCL_IB_ROCE_VERSION_NUM": "2",
+    "NCCL_IB_SUBNET_AWARE_ROUTING": "1",
+    "NCCL_IB_SUBNET_PREFIX_LEN": "24",
+    "NCCL_IB_MERGE_NICS": "0",
+    "NCCL_CROSS_NIC": "1",
+    "NCCL_IB_EXTENDED_IPV4_GIDS": "1",
+    "NCCL_IB_PRESERVE_PCI_DOMAIN": "1",
+    "NCCL_IB_ROUTE_DIAGNOSTICS": "1",
+    "NCCL_NVLS_ENABLE": "0"
+  }
+}

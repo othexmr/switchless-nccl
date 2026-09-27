@@ -1,0 +1,48 @@
+name: Four-PF Linux and native ARM64 checks
+
+on:
+  push:
+    branches: ["codex/dual-pf-source-integration"]
+  pull_request:
+    paths:
+      - 'patches/**'
+      - 'profiles/dual-pf.json'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/dual-pf.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Default source gates and four-PF CPU tests
+        run: ./scripts/check.sh
+  arm64:
+    needs: linux
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile opt-in four-PF library (no GPU)
+        run: ./scripts/build-dual-pf-ci.sh "$RUNNER_TEMP/dual-pf"
+      - name: Retain source and build evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dual-pf-arm64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/dual-pf/*.json
+            ${{ runner.temp }}/dual-pf/*.log
+            ${{ runner.temp }}/dual-pf/*.txt
+            ${{ runner.temp }}/dual-pf/licenses/
+            ${{ runner.temp }}/dual-pf/source/build/lib/libnccl.so.2.30.7
+          if-no-files-found: warn
+          retention-days: 30

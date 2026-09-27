@@ -60,4 +60,8 @@ for patch in \
 done
 test "$(git -C "$CHECK_DIR/nccl" write-tree)" = "$NCCL_PATCHED_TREE"
 
-echo "source pins, patch, scripts, and Netplan template passed"
+# The four-PF option has its own immutable source tree and CPU listener gates.
+NCCL_SOURCE="$CHECK_DIR/nccl" python3 -B -m unittest discover \
+  -s "$ROOT/tests" -p test_dual_pf.py -v
+
+echo "source pins, patch, scripts, Netplan template, and dual-PF CPU gates passed"
