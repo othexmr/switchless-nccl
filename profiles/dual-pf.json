@@ -3,7 +3,7 @@
   "status": "source-reconstruction-only",
   "nccl_revision": "73cf112295c33aee2b895f329f592f2a9b4b0f97",
   "base_tree": "3e7de6f92f0190d1afe9f05642e634cbf43ae4c9",
-  "patched_tree": "6373893a20a873aec89c88b6a57b5df8142d6888",
+  "patched_tree": "3994f7717131c9d0ee227eed156ea21d28147071",
   "source_commit": "cbd2a32d17592d6480a781d06630c6a3325ea8d2",
   "source_commit_role": "historical source snapshot before restoration of the predecessor's attribution comment; current reconstruction is pinned by patches and patched_tree",
   "patches": [
@@ -22,6 +22,14 @@
     {
       "path": "patches/nccl-2.30.7-dual-pf.patch",
       "sha256": "18003f94606ac05a667c14024db6fbf775cf0f8753a4aa2a012c73be6f64b664"
+    },
+    {
+      "path": "patches/nccl-2.30.7-dual-pf-listener-policy.patch",
+      "sha256": "b8f203d573d5dd03a5db7e187a09bbcc7d50a98883b3ae03df7766a07a1ef202"
+    },
+    {
+      "path": "patches/nccl-2.30.7-dual-pf-configurable-fabric.patch",
+      "sha256": "a411c66d379bb156e6164008228a5678442e051854276611e2aeccd1ab53d80d"
     }
   ],
   "historical_library": {
@@ -36,7 +44,6 @@
     "NCCL_NET": "IB",
     "NCCL_IB_DISABLE": "0",
     "NCCL_IB_ADDR_FAMILY": "AF_INET",
-    "NCCL_IB_ADDR_RANGE": "10.100.224.0/22",
     "NCCL_IB_ROCE_VERSION_NUM": "2",
     "NCCL_IB_SUBNET_AWARE_ROUTING": "1",
     "NCCL_IB_SUBNET_PREFIX_LEN": "24",
@@ -46,5 +53,12 @@
     "NCCL_IB_PRESERVE_PCI_DOMAIN": "1",
     "NCCL_IB_ROUTE_DIAGNOSTICS": "1",
     "NCCL_NVLS_ENABLE": "0"
-  }
+  },
+  "historical_patched_tree": "6373893a20a873aec89c88b6a57b5df8142d6888",
+  "deployment_environment": [
+    "NCCL_IB_HCA",
+    "NCCL_IB_ADDR_RANGE",
+    "NCCL_SOCKET_IFNAME",
+    "GLOO_SOCKET_IFNAME"
+  ]
 }

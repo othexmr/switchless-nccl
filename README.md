@@ -147,3 +147,8 @@ under Apache-2.0. See [`NOTICE`](NOTICE) and
 The opt-in [dual-PF source preparation](docs/dual-pf.md) reconstructs a separately
 identified four-PF Ring source tree and emits its build command. It does not
 change the default two-device release or qualify a rebuilt library.
+
+The [deployment configuration renderer](docs/dual-pf.md#configuration-and-limits)
+accepts operator-owned fabric CIDRs, four exact HCA names and a management
+interface. The [transport contribution assessment](docs/transport-candidates.md)
+records which runtime optimizations require a separate implementation and gates.

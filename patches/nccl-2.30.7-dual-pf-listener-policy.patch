@@ -1,0 +1,61 @@
+diff --git a/src/transport/net_ib/connect.cc b/src/transport/net_ib/connect.cc
+index f4b58a4..9c1fe52 100644
+--- a/src/transport/net_ib/connect.cc
++++ b/src/transport/net_ib/connect.cc
+@@ -26,7 +26,7 @@ NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
+ NCCL_PARAM(IbEceEnable, "IB_ECE_ENABLE", 1);
+ 
+ extern int64_t ncclParamIbOooRq();
+-extern int64_t ncclParamSwitchlessRingOnly();
++extern bool ncclSwitchlessRingOnly();
+ extern int64_t ncclParamIbMergeNics();
+ #include "tp4_listener_contract.h"
+ 
+@@ -701,15 +701,14 @@ ncclResult_t ncclIbListen(void* ctx, int dev, void* opaqueHandle, void** listenC
+   NCCLCHECKGOTO(ncclSocketListen(&comm->sock), ret, fail);
+   NCCLCHECKGOTO(ncclSocketGetAddr(&comm->sock, &handle->connectAddr), ret, fail);
+ 
+-  // Advertise every eligible local RoCE device. A switchless cycle selects the
+-  // physical cable shared with each peer after receiving this handle; limiting
+-  // the handle to the topology-selected device can advertise the other cable.
++  // Switchless and extended publication need every eligible local RoCE device.
++  // With both options off, retain the topology-selected device only.
+   if (ncclParamIbSubnetAwareRouting() && dev < ncclNMergedIbDevs) {
+     int gidSlot = 0;
+     const bool extended = ncclParamIbExtendedIpv4Gids() != 0;
+     // A fifth candidate detects overflow; never silently publish a truncated v1 list.
+ 
+-    const bool strict = ncclParamSwitchlessRingOnly() != 0;
++    const bool strict = ncclSwitchlessRingOnly();
+     if (strict && (ncclParamIbMergeNics() != 0 || ncclParamIbSubnetPrefixLen() != 24 ||
+                    (extended && !ncclParamIbPreservePciDomain()))) {
+       WARN("TP4 listener requires no merging, /24 fabric, and dual PCI-root preservation");
+@@ -718,7 +717,8 @@ ncclResult_t ncclIbListen(void* ctx, int dev, void* opaqueHandle, void** listenC
+     const int limit = strict ? 5 : (extended ? 5 : 2);
+     uint8_t candidateGids[4][16] = {};
+     char candidateRoots[4][11] = {};
+-    for (int devIdx = 0; devIdx < ncclNMergedIbDevs && gidSlot < limit; devIdx++) {
++    const Tp4ListenerDevices devices = tp4ListenerDevices(strict, extended, dev, ncclNMergedIbDevs);
++    for (int devIdx = devices.begin; devIdx < devices.end && gidSlot < limit; devIdx++) {
+       struct ncclIbMergedDev* mDev = ncclIbMergedDevs + devIdx;
+       for (int i = 0; i < mDev->vProps.ndevs && gidSlot < limit; i++) {
+         int ibDevN = mDev->vProps.devs[i];
+diff --git a/src/transport/net_ib/tp4_listener_contract.h b/src/transport/net_ib/tp4_listener_contract.h
+index b2838db..a1156b1 100644
+--- a/src/transport/net_ib/tp4_listener_contract.h
++++ b/src/transport/net_ib/tp4_listener_contract.h
+@@ -3,6 +3,14 @@
+ #include <cstdint>
+ #include <cstring>
+ 
++// Share the listener's selection policy with its CPU contract tests.
++struct Tp4ListenerDevices { int begin; int end; };
++static inline Tp4ListenerDevices tp4ListenerDevices(bool strict, bool extended,
++                                                   int selected, int count) {
++  if (strict || extended) return {0, count};
++  return {selected, selected + 1};
++}
++
+ static inline const char* tp4ValidateListener(const uint8_t gids[4][16],
+                                              const char roots[4][11],
+                                              int count, bool dual) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// CPU-only validation of the exact qualified source's listener contract.
+// CPU-only validation of the reconstructed source's listener contract.
 #include "tp4_listener_contract.h"
 #include <algorithm>
 #include <cassert>
@@ -17,6 +17,21 @@ static void valid(uint8_t gids[4][16], char roots[4][11]) {
 }
 
 int main() {
+  // Device 2 must remain selected even when other devices sort before it.
+  for (int selected = 0; selected < 4; ++selected) {
+    for (int strict = 0; strict < 2; ++strict) {
+      for (int extended = 0; extended < 2; ++extended) {
+        const auto devices = tp4ListenerDevices(strict, extended, selected, 4);
+        int published = 0;
+        for (int i = devices.begin; i < devices.end; ++i) {
+          assert(i >= 0 && i < 4);
+          if (!strict && !extended) assert(i == selected);
+          ++published;
+        }
+        assert(published == (strict || extended ? 4 : 1));
+      }
+    }
+  }
   uint8_t gids[4][16], orderedGids[4][16];
   char roots[4][11], orderedRoots[4][11];
   valid(gids, roots);
@@ -44,7 +59,7 @@ int main() {
   assert(tp4ValidateListener(gids, roots, 4, true) != nullptr);
   valid(gids, roots); gids[0][0] = 0x20;
   assert(tp4ValidateListener(gids, roots, 4, true) != nullptr);
-  valid(gids, roots); gids[0][14] = 223;
+  valid(gids, roots); gids[0][12] = 224;
   assert(tp4ValidateListener(gids, roots, 4, true) != nullptr);
   valid(gids, roots); gids[0][15] = 0;
   assert(tp4ValidateListener(gids, roots, 4, true) != nullptr);
@@ -58,5 +73,19 @@ int main() {
   assert(tp4ValidateListener(gids, roots, 4, true) != nullptr);
   valid(gids, roots); std::memcpy(roots[3], "pci0003:00", 11);
   assert(tp4ValidateListener(gids, roots, 4, true) != nullptr);
+  // Unrelated /24 cable networks can share the third octet. This caught
+  // the original validator's implicit common /16 assumption.
+  valid(gids, roots);
+  for (int i = 0; i < 4; ++i) {
+    gids[i][12] = uint8_t(i < 2 ? 10 : 172);
+    gids[i][13] = uint8_t(i < 2 ? 33 : 16);
+    gids[i][14] = 7;
+  }
+  assert(tp4ValidateListener(gids, roots, 4, true) == nullptr);
+  for (int first : {0, 127, 224, 255}) {
+    const auto saved = gids[0][12]; gids[0][12] = uint8_t(first);
+    assert(tp4ValidateListener(gids, roots, 4, true) != nullptr);
+    gids[0][12] = saved;
+  }
   std::puts("listener contract: 24 dual-PF permutations, two-PF and invalid cases passed");
 }

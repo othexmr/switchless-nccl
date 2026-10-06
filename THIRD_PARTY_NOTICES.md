@@ -26,7 +26,8 @@ This repository contains no source from it and records conceptual credit only.
 
 ## Optional dual-PF source profile
 
-The optional fourth patch and source-preparation integration are distributed
+The optional fourth patch, two listener repair patches and source-preparation
+integration are distributed
 under Apache-2.0. The patch retains NVIDIA context and the attributed
 SparkRing / OpenFaaS predecessor. See [dual-PF provenance](docs/dual-pf.md#attribution).
 The historical source snapshot and rebuilt binaries have separate identities.

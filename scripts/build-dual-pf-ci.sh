@@ -9,26 +9,37 @@ OUTPUT=${1:?usage: build-dual-pf-ci.sh FRESH_OUTPUT}
 [[ $(uname -s) == Linux && $(uname -m) == aarch64 ]] || {
   echo 'native Linux aarch64 required' >&2; exit 2;
 }
-[[ ! -e "$OUTPUT" && ! -L "$OUTPUT" && ! -e "${OUTPUT}-upstream" ]] || {
-  echo 'fresh output and upstream paths required; inspect any previous failure first' >&2; exit 2;
-}
 for command in docker git python3 file readelf sha256sum strings; do
   command -v "$command" >/dev/null
 done
+OUTPUT=$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).absolute())' "$OUTPUT")
+for path in "$OUTPUT" "${OUTPUT}-upstream" "${OUTPUT}-upstream.log" \
+  "${OUTPUT}-prepare.log" "${OUTPUT}-exit.txt"; do
+  [[ ! -e "$path" && ! -L "$path" ]] || {
+    echo 'fresh output, upstream and evidence paths required; inspect any previous failure first' >&2
+    exit 2
+  }
+done
+record_exit() {
+  local result=$?
+  printf 'exit_code=%s\n' "$result" > "${OUTPUT}-exit.txt"
+  if [[ -d "$OUTPUT" && ! -L "$OUTPUT" ]]; then
+    printf 'exit_code=%s\n' "$result" > "$OUTPUT/exit.txt"
+  fi
+}
+trap record_exit EXIT
 # Full checkout of the exact commit; the offline preparer must not lazy-fetch.
-git init -q "${OUTPUT}-upstream"
-git -C "${OUTPUT}-upstream" fetch -q --depth=1 https://github.com/NVIDIA/nccl.git "$NCCL_COMMIT"
-git -C "${OUTPUT}-upstream" checkout -q --detach FETCH_HEAD
-python3 "$ROOT/scripts/prepare_dual_pf.py" --nccl-source "${OUTPUT}-upstream" --output "$OUTPUT"
+git init -q "${OUTPUT}-upstream" 2>&1 | tee "${OUTPUT}-upstream.log"
+git -C "${OUTPUT}-upstream" fetch -q --depth=1 https://github.com/NVIDIA/nccl.git "$NCCL_COMMIT" \
+  2>&1 | tee -a "${OUTPUT}-upstream.log"
+git -C "${OUTPUT}-upstream" checkout -q --detach FETCH_HEAD \
+  2>&1 | tee -a "${OUTPUT}-upstream.log"
+python3 "$ROOT/scripts/prepare_dual_pf.py" --nccl-source "${OUTPUT}-upstream" --output "$OUTPUT" \
+  2>&1 | tee "${OUTPUT}-prepare.log"
 OUTPUT=$(cd "$OUTPUT" && pwd)
 mkdir "$OUTPUT/licenses"
 cp "$OUTPUT/source/LICENSE.txt" "$OUTPUT/source/ThirdPartyNotices.txt" "$OUTPUT/licenses/"
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/THIRD_PARTY_NOTICES.md" "$OUTPUT/licenses/"
-record_exit() {
-  local result=$?
-  printf "exit_code=%s\n" "$result" > "$OUTPUT/exit.txt"
-}
-trap record_exit EXIT
 container="dual-pf-${GITHUB_RUN_ID:-local-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')}-${GITHUB_RUN_ATTEMPT:-1}"
 printf '%s\n' "$container" > "$OUTPUT/container-name.txt"
 # Retain the build container until the hosted VM expires. No --rm, cache pruning,
