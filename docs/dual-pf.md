@@ -96,8 +96,7 @@ The /24 geometry remains a protocol restriction; IPv6 and arbitrary prefixes
 need separate implementation and qualification.
 
 Tree/PAT, diagonal P2P, generic IPv6/InfiniBand and TP2 are not qualified by
-this profile. Existing release defaults remain unchanged. Other transport
-candidates are assessed in [the contribution assessment](transport-candidates.md).
+this profile. Existing release defaults remain unchanged.
 
 ## Offline verification and hardware gates
 

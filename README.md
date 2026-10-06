@@ -150,5 +150,4 @@ change the default two-device release or qualify a rebuilt library.
 
 The [deployment configuration renderer](docs/dual-pf.md#configuration-and-limits)
 accepts operator-owned fabric CIDRs, four exact HCA names and a management
-interface. The [transport contribution assessment](docs/transport-candidates.md)
-records which runtime optimizations require a separate implementation and gates.
+interface.
