@@ -141,3 +141,11 @@ The sole implementation and migration contract are summarised in
 Original project work is Copyright 2026 Alex Ellis, OpenFaaS Ltd, and licensed
 under Apache-2.0. See [`NOTICE`](NOTICE) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+## Four-PF (dual PCI-root) profile
+
+For a cycle where each Spark reaches each neighbour through two PCIe-root
+functions (four RoCE PFs per node), an opt-in source profile adds four-GID
+listener advertisement, PCI-root-preserving routing and strict listener
+admission. It does not change the default two-device release. See
+[docs/dual-pf.md](docs/dual-pf.md).
