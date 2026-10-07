@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('prepare_dual_pf', ROOT/'scripts/prepare_dual_pf.py')
 prep = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prep)
+env_spec = importlib.util.spec_from_file_location('dual_pf_env', ROOT/'scripts/render-dual-pf-env.py')
+env_renderer = importlib.util.module_from_spec(env_spec)
+env_spec.loader.exec_module(env_renderer)
 
 
 class InputTests(unittest.TestCase):
@@ -74,6 +77,48 @@ class InputTests(unittest.TestCase):
             self.assertTrue(build['status'].startswith('UNRUN'))
             self.assertEqual(build['argv'][0], 'make')
 
+
+class ConfigurationTests(unittest.TestCase):
+    @staticmethod
+    def config():
+        return dict(hcas=['mlx5_0', 'mlx5_1', 'mlx5_2', 'mlx5_3'],
+                    fabric_cidr='192.0.2.0/23',
+                    fabric_addresses=['192.0.2.1', '192.0.2.2', '192.0.3.1', '192.0.3.2'],
+                    socket_ifname='eth0')
+
+    def test_portable_output_and_exact_hca_selection(self):
+        text = env_renderer.render(self.config())
+        # Check shell semantics without loading a library or contacting a host.
+        result = subprocess.run(['bash', '-c', 'export NCCL_IB_GID_INDEX=3\n' + text +
+            'printf "%s\\n" "$NCCL_IB_HCA" "$NCCL_IB_ADDR_RANGE" "$NCCL_SOCKET_IFNAME" '
+            '"$GLOO_SOCKET_IFNAME" "$NCCL_IB_EXTENDED_IPV4_GIDS" "${NCCL_IB_GID_INDEX-unset}"'],
+            capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.splitlines(),
+                         ['=mlx5_0,mlx5_1,mlx5_2,mlx5_3', '192.0.2.0/23', '=eth0', 'eth0', '1', 'unset'])
+
+    def test_invalid_sites_refused(self):
+        variants = [
+            {'hcas': ['mlx5_0']*4}, {'hcas': ['mlx5_0', 'mlx5_1', 'mlx5_2', 'x;touch /tmp/x']},
+            {'socket_ifname': 'eth0,eth1'}, {'socket_ifname': '0123456789012345'},
+            {'fabric_cidr': '192.0.2.1/23'}, {'fabric_cidr': '::/0'},
+            {'fabric_cidr': '192.0.2.0/24'},
+            {'fabric_addresses': ['192.0.2.1']*4},
+            {'fabric_addresses': ['192.0.2.1', '192.0.2.2', '192.0.2.3', '192.0.2.4']},
+            {'fabric_addresses': ['192.0.2.1', '192.0.2.2', '192.0.3.1', '192.0.3.255']},
+            {'extra': 'unsupported'},
+        ]
+        for update in variants:
+            with self.subTest(update=update), self.assertRaises((ValueError, TypeError)):
+                env_renderer.render(dict(self.config(), **update))
+
+    def test_cli_invalid_config_has_no_partial_exports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'config.json'
+            path.write_text(json.dumps(dict(self.config(), socket_ifname='bad;command')))
+            result = subprocess.run(['python3', str(ROOT/'scripts/render-dual-pf-env.py'), str(path)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, '')
 
 if __name__ == '__main__':
     unittest.main()
