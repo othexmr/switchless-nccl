@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "status": "source-profile",
+  "nccl_revision": "73cf112295c33aee2b895f329f592f2a9b4b0f97",
+  "base_tree": "3e7de6f92f0190d1afe9f05642e634cbf43ae4c9",
+  "patched_tree": "3b71d59cb6e955abd131cd968d1c608f7855dfee",
+  "patches": [
+    {
+      "path": "patches/nccl-2.30.7-skip-tree-pat.patch",
+      "sha256": "097656d07a5774919f0d51558b51ec05de8168c0097ed6cb7764c33230ba6eb2"
+    },
+    {
+      "path": "patches/nccl-2.30.7-advertise-all-listener-gids.patch",
+      "sha256": "dccfce86d14c15c39f0e0a742863960205a3d9823c464b31a7f7389354844178"
+    },
+    {
+      "path": "patches/nccl-2.30.7-hardened-switchless.patch",
+      "sha256": "e2dd39eaefc022f99d5a3d3195e81947da20a4c7acbf1d688b4df8f6691c210c"
+    },
+    {
+      "path": "patches/nccl-2.30.7-dual-pf.patch",
+      "sha256": "7823a88ac2cffa715010068ffcc48e18fe7cdb3b21bf5af97f2670c24a1ebfbc"
+    }
+  ],
+  "required_environment": {
+    "NCCL_SWITCHLESS_RING_ONLY": "1",
+    "NCCL_ALGO": "Ring",
+    "NCCL_NET": "IB",
+    "NCCL_IB_DISABLE": "0",
+    "NCCL_IB_ADDR_FAMILY": "AF_INET",
+    "NCCL_IB_ROCE_VERSION_NUM": "2",
+    "NCCL_IB_SUBNET_AWARE_ROUTING": "1",
+    "NCCL_IB_SUBNET_PREFIX_LEN": "24",
+    "NCCL_IB_MERGE_NICS": "0",
+    "NCCL_CROSS_NIC": "1",
+    "NCCL_IB_EXTENDED_IPV4_GIDS": "1",
+    "NCCL_IB_PRESERVE_PCI_DOMAIN": "1",
+    "NCCL_IB_ROUTE_DIAGNOSTICS": "1",
+    "NCCL_NVLS_ENABLE": "0"
+  },
+  "deployment_environment": [
+    "NCCL_IB_HCA",
+    "NCCL_IB_ADDR_RANGE",
+    "NCCL_SOCKET_IFNAME",
+    "GLOO_SOCKET_IFNAME"
+  ]
+}
