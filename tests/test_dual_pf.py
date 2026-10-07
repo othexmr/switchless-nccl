@@ -120,5 +120,121 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stdout, '')
 
+class HostedBuildTests(unittest.TestCase):
+    def test_early_failures_retain_evidence_and_stop(self):
+        """No Docker call or subsequent checkout after a failed fetch/prepare."""
+        for stage, code in [('fetch', 41), ('prepare', 42)]:
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                env = self.early_fixture(root, stage)
+                out = root/'build'
+                result = subprocess.run(['bash', str(root/'scripts/build-dual-pf-ci.sh'), str(out)],
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertEqual((root/'build-exit.txt').read_text(), f'exit_code={code}\n')
+                self.assertFalse((root/'docker-calls').exists())
+                calls = (root/'git-calls').read_text()
+                self.assertIn('fetch', calls)
+                if stage == 'fetch':
+                    self.assertNotIn('checkout', calls)
+                    self.assertFalse((root/'build-prepare.log').exists())
+                    self.assertIn('fetch failure', (root/'build-upstream.log').read_text())
+                else:
+                    self.assertIn('checkout', calls)
+                    self.assertIn('prepare failure', (root/'build-prepare.log').read_text())
+                # A failed run is evidence: rerunning in-place must preserve it.
+                before = (root/'build-exit.txt').read_bytes()
+                again = subprocess.run(['bash', str(root/'scripts/build-dual-pf-ci.sh'), str(out)],
+                                       env=env, capture_output=True, text=True)
+                self.assertEqual(again.returncode, 2)
+                self.assertEqual((root/'build-exit.txt').read_bytes(), before)
+
+    def test_dangling_upstream_symlink_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = self.early_fixture(root, 'fetch')
+            upstream = root/'build-upstream'
+            upstream.symlink_to(root/'missing-target')
+            result = subprocess.run(['bash', str(root/'scripts/build-dual-pf-ci.sh'), str(root/'build')],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertTrue(upstream.is_symlink())
+            self.assertFalse((root/'missing-target').exists())
+            self.assertFalse((root/'git-calls').exists())
+            self.assertFalse((root/'docker-calls').exists())
+
+    @staticmethod
+    def early_fixture(root, stage):
+        (root/'scripts').mkdir(); (root/'bin').mkdir()
+        shutil.copy(ROOT/'scripts/build-dual-pf-ci.sh', root/'scripts')
+        (root/'scripts/versions.sh').write_text('NCCL_COMMIT=pinned\nCUDA_IMAGE=unused\n')
+        (root/'scripts/prepare_dual_pf.py').write_text(
+            "import sys\nprint('prepare failure', file=sys.stderr)\nsys.exit(42)\n")
+        stubs = {
+            'uname': 'if [ "$1" = -s ]; then echo Linux; else echo aarch64; fi',
+            'git': 'printf "%s\\n" "$*" >> "$GIT_CALLS"; '
+                   'if [ "$1" = init ]; then mkdir "$3"; fi; '
+                   'if [ "$3" = fetch ] && [ "$FAIL_STAGE" = fetch ]; then '
+                   'echo "fetch failure" >&2; exit 41; fi; exit 0',
+            'docker': 'echo unexpected >> "$DOCKER_CALLS"; exit 99',
+            'file': 'exit 99', 'readelf': 'exit 99', 'strings': 'exit 99', 'sha256sum': 'exit 99',
+        }
+        for name, body in stubs.items():
+            path = root/'bin'/name
+            path.write_text('#!/bin/sh\n'+body+'\n'); path.chmod(0o755)
+        return dict(os.environ, PATH=str(root/'bin')+os.pathsep+os.environ['PATH'],
+                    GIT_CALLS=str(root/'git-calls'), DOCKER_CALLS=str(root/'docker-calls'),
+                    FAIL_STAGE=stage)
+
+    def test_local_builds_retain_unique_names_and_distribution_notices(self):
+        """Exercise the real build wrapper up to Docker using CPU-only stubs."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/'scripts').mkdir(); (root/'bin').mkdir()
+            shutil.copy(ROOT/'scripts/build-dual-pf-ci.sh', root/'scripts')
+            (root/'scripts/versions.sh').write_text('NCCL_COMMIT=pinned\nCUDA_IMAGE=unused\n')
+            (root/'scripts/prepare_dual_pf.py').write_text(
+                "import pathlib,sys\n"
+                "out=pathlib.Path(sys.argv[sys.argv.index('--output')+1])\n"
+                "(out/'source').mkdir(parents=True)\n"
+                "for name in ['LICENSE.txt','ThirdPartyNotices.txt']:\n"
+                " (out/'source'/name).write_text(name+' original bytes')\n")
+            for name in ('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'):
+                shutil.copy(ROOT/name, root/name)
+            stubs = {
+                'uname': 'if [ "$1" = -s ]; then echo Linux; else echo aarch64; fi',
+                'git': 'exit 0',
+                'docker': 'printf "%s\\n" "$@" >> "$DOCKER_CALLS"; exit 44',
+                'file': 'exit 99', 'readelf': 'exit 99',
+                'sha256sum': 'exit 99', 'strings': 'exit 99',
+            }
+            for name, body in stubs.items():
+                path = root/'bin'/name
+                path.write_text('#!/bin/sh\n'+body+'\n'); path.chmod(0o755)
+            env = dict(os.environ, PATH=str(root/'bin')+os.pathsep+os.environ['PATH'],
+                       DOCKER_CALLS=str(root/'docker-calls'))
+            env.pop('GITHUB_RUN_ID', None); env.pop('GITHUB_RUN_ATTEMPT', None)
+            names = []
+            for index in range(2):
+                out = root/f'build-{index}'
+                result = subprocess.run(['bash', str(root/'scripts/build-dual-pf-ci.sh'), str(out)],
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 44, result.stderr)
+                names.append((out/'container-name.txt').read_text().strip())
+                self.assertRegex(names[-1], r'^dual-pf-local-[0-9a-f]{32}-1$')
+                self.assertEqual((out/'exit.txt').read_text(), 'exit_code=44\n')
+                for name in ('LICENSE.txt', 'ThirdPartyNotices.txt'):
+                    self.assertEqual((out/'licenses'/name).read_bytes(), (out/'source'/name).read_bytes())
+                for name in ('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'):
+                    self.assertEqual((out/'licenses'/name).read_bytes(), (ROOT/name).read_bytes())
+            self.assertNotEqual(*names)
+            calls = (root/'docker-calls').read_text().splitlines()
+            self.assertEqual(calls.count('run'), 2)
+            self.assertNotIn('rm', calls); self.assertNotIn('--rm', calls)
+            for name in names:
+                self.assertIn(name, calls)
+            workflow = (ROOT/'.github/workflows/nccl-arm64.yml').read_text()
+            self.assertIn('${{ runner.temp }}/dual-pf/licenses/', workflow)
+
 if __name__ == '__main__':
     unittest.main()
