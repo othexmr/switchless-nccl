@@ -152,6 +152,22 @@ The run also checked:
 - **Engagement:** per-HCA `port_xmit_data` counters show every used port splitting traffic 30–70 % across its two PFs.
   The route diagnostics show every rank connecting on all four HCAs, on both PCI roots.
 
+### Per-function addressing
+
+A second run checked the per-function layout. The library was built from this branch with per-function admission:
+patched tree `50ffad54`, aarch64 `libnccl.so.2.30.7`, SHA256 `db508c9c…2802`. Each PF got its own /24 next to its
+per-cable address, and `NCCL_IB_ADDR_RANGE` selected one layout per arm. Both layouts ran the same sweep with the
+same library, in interleaved rounds:
+
+| Message | Per function | Per cable | Ratio |
+|---|---:|---:|---:|
+| 16 MiB | 22.54 GB/s | 22.67 GB/s | 0.99× |
+| 64 MiB | 22.00 GB/s | 22.96 GB/s | 0.96× |
+| 256 MiB | 23.25 GB/s | 23.19 GB/s | 1.00× |
+
+The per-function run passed the same correctness and engagement checks. Per-function addressing is supported and
+performs in line with per-cable addressing; it is not claimed to be faster.
+
 Small messages (≤ 1 MiB) were within run-to-run noise of the two-PF release and are not claimed. This is a
 collective benchmark on one fabric, not an end-to-end serving result.
 
