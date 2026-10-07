@@ -96,6 +96,13 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(result.stdout.splitlines(),
                          ['=mlx5_0,mlx5_1,mlx5_2,mlx5_3', '192.0.2.0/23', '=eth0', 'eth0', '1', 'unset'])
 
+    def test_per_function_layout_accepted(self):
+        config = dict(self.config(), fabric_cidr='192.0.0.0/22',
+                      fabric_addresses=['192.0.0.1', '192.0.1.1', '192.0.2.1', '192.0.3.1'])
+        text = env_renderer.render(config)
+        self.assertIn("export NCCL_IB_ADDR_RANGE=192.0.0.0/22\n", text)
+        self.assertIn("export NCCL_IB_HCA==mlx5_0,mlx5_1,mlx5_2,mlx5_3\n", text)
+
     def test_invalid_sites_refused(self):
         variants = [
             {'hcas': ['mlx5_0']*4}, {'hcas': ['mlx5_0', 'mlx5_1', 'mlx5_2', 'x;touch /tmp/x']},
@@ -104,6 +111,8 @@ class ConfigurationTests(unittest.TestCase):
             {'fabric_cidr': '192.0.2.0/24'},
             {'fabric_addresses': ['192.0.2.1']*4},
             {'fabric_addresses': ['192.0.2.1', '192.0.2.2', '192.0.2.3', '192.0.2.4']},
+            {'fabric_cidr': '192.0.0.0/22',
+             'fabric_addresses': ['192.0.0.1', '192.0.1.1', '192.0.1.2', '192.0.2.1']},
             {'fabric_addresses': ['192.0.2.1', '192.0.2.2', '192.0.3.1', '192.0.3.255']},
             {'extra': 'unsupported'},
         ]

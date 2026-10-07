@@ -44,8 +44,11 @@ def render(config):
             raise ValueError('every address must be a unicast /24 host inside fabric_cidr')
         subnet = ipaddress.IPv4Network(f'{address}/24', strict=False)
         subnets[subnet] = subnets.get(subnet, 0) + 1
-    if sorted(subnets.values()) != [2, 2]:
-        raise ValueError('four PFs require two distinct cable /24s with two addresses each')
+    # Per-cable layout: two /24s, one per cable, two PFs each.
+    # Per-function layout: four /24s, one per PF (NVIDIA p0-to-p1 playbook style).
+    if sorted(subnets.values()) not in ([2, 2], [1, 1, 1, 1]):
+        raise ValueError('four PFs need two cable /24s with two addresses each, '
+                         'or four distinct per-function /24s')
     profile = json.loads((ROOT/'profiles/dual-pf.json').read_text())
     env = dict(profile['required_environment'])
     env.update(NCCL_IB_HCA='='+','.join(hcas), NCCL_IB_ADDR_RANGE=str(network),

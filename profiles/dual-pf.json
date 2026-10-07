@@ -3,7 +3,7 @@
   "status": "source-profile",
   "nccl_revision": "73cf112295c33aee2b895f329f592f2a9b4b0f97",
   "base_tree": "3e7de6f92f0190d1afe9f05642e634cbf43ae4c9",
-  "patched_tree": "3b71d59cb6e955abd131cd968d1c608f7855dfee",
+  "patched_tree": "50ffad54ce4229bcb8f13bbccda7c9cf68a46b0a",
   "patches": [
     {
       "path": "patches/nccl-2.30.7-skip-tree-pat.patch",
@@ -19,7 +19,7 @@
     },
     {
       "path": "patches/nccl-2.30.7-dual-pf.patch",
-      "sha256": "7823a88ac2cffa715010068ffcc48e18fe7cdb3b21bf5af97f2670c24a1ebfbc"
+      "sha256": "bcd73d1a38c1ed2e394dac40d46cd417b3cd53f8feaf422b760dc6b257db9063"
     }
   ],
   "required_environment": {

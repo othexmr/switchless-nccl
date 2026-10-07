@@ -375,10 +375,10 @@ index 0000000..6c24b75
 +#endif
 diff --git a/src/transport/net_ib/switchless_listener_contract.h b/src/transport/net_ib/switchless_listener_contract.h
 new file mode 100644
-index 0000000..83327ce
+index 0000000..18e5a5a
 --- /dev/null
 +++ b/src/transport/net_ib/switchless_listener_contract.h
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,69 @@
 +// Switchless four-PF listener publication contract (pure helpers, CPU-testable).
 +#pragma once
 +#include <cstdint>
@@ -392,13 +392,21 @@ index 0000000..83327ce
 +  return {selected, selected + 1};
 +}
 +
++// Validates the GIDs a switchless listener publishes.
++// Two-PF mode (dual=false): exactly two GIDs on two different /24s.
++// Four-PF mode (dual=true): four GIDs on exactly two PCI roots, two per root, in
++// one of two addressing layouts:
++//   - per cable:    two /24s (one per cable), each holding one GID per PCI root;
++//   - per function: four distinct /24s (each PF on its own /24, as in NVIDIA's
++//                   p0-to-p1 clustering playbook), two per PCI root.
 +static inline const char* switchlessValidateListener(const uint8_t gids[4][16],
 +                                             const char roots[4][11],
 +                                             int count, bool dual) {
 +  const int expected = dual ? 4 : 2;
 +  if (count != expected) return "wrong listener count";
-+  uint8_t subnets[2][3] = {}; int perSubnet[2] = {}; int nSubnet = 0;
-+  char domains[2][11] = {}; int nDomain = 0; bool pairs[2][2] = {};
++  uint8_t subnets[4][3] = {}; int perSubnet[4] = {}; int nSubnet = 0;
++  char domains[2][11] = {}; int nDomain = 0; int perDomain[2] = {};
++  int subnetOf[4] = {}, domainOf[4] = {};
 +  for (int i = 0; i < count; ++i) {
 +    for (int b = 0; b < 10; ++b) if (gids[i][b]) return "not IPv4 mapped";
 +    if (gids[i][10] != 0xff || gids[i][11] != 0xff) return "not IPv4 mapped";
@@ -409,11 +417,9 @@ index 0000000..83327ce
 +    for (int j = 0; j < i; ++j) if (!std::memcmp(gids[i], gids[j], 16)) return "duplicate GID";
 +    int subnet = 0;
 +    while (subnet < nSubnet && std::memcmp(subnets[subnet], gids[i] + 12, 3)) ++subnet;
-+    if (subnet == nSubnet) {
-+      if (nSubnet == 2) return "more than two cable subnets";
-+      std::memcpy(subnets[nSubnet++], gids[i] + 12, 3);
-+    }
++    if (subnet == nSubnet) std::memcpy(subnets[nSubnet++], gids[i] + 12, 3);
 +    ++perSubnet[subnet];
++    subnetOf[i] = subnet;
 +    if (dual) {
 +      if (!roots[i][0] || roots[i][10] != 0) return "invalid PCI root";
 +      int domain = 0;
@@ -422,14 +428,24 @@ index 0000000..83327ce
 +        if (nDomain == 2) return "more than two PCI roots";
 +        std::memcpy(domains[nDomain++], roots[i], 11);
 +      }
-+      if (pairs[subnet][domain]) return "duplicate subnet and PCI-root pair";
-+      pairs[subnet][domain] = true;
++      ++perDomain[domain];
++      domainOf[i] = domain;
 +    }
 +  }
-+  if (nSubnet != 2 || perSubnet[0] != (dual ? 2 : 1) || perSubnet[1] != (dual ? 2 : 1))
-+    return "unbalanced cable listener publication";
-+  if (dual && (nDomain != 2 || !pairs[0][0] || !pairs[0][1] || !pairs[1][0] || !pairs[1][1]))
-+    return "incomplete cable and PCI-root cross product";
++  if (!dual) {
++    if (nSubnet != 2) return "two-PF listener needs two cable subnets";
++    return nullptr;
++  }
++  if (nDomain != 2 || perDomain[0] != 2 || perDomain[1] != 2)
++    return "four-PF listener needs two PFs on each of two PCI roots";
++  if (nSubnet == 4) return nullptr;  // per-function layout
++  if (nSubnet != 2) return "four-PF listener needs two cable subnets or four per-function subnets";
++  // Per-cable layout: each cable subnet holds one PF from each PCI root.
++  if (perSubnet[0] != 2 || perSubnet[1] != 2) return "unbalanced cable listener publication";
++  for (int i = 0; i < count; ++i)
++    for (int j = i + 1; j < count; ++j)
++      if (subnetOf[i] == subnetOf[j] && domainOf[i] == domainOf[j])
++        return "duplicate subnet and PCI-root pair";
 +  return nullptr;
 +}
 diff --git a/tests/routing_handle/README.md b/tests/routing_handle/README.md

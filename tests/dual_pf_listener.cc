@@ -16,6 +16,12 @@ static void valid(uint8_t gids[4][16], char roots[4][11]) {
   }
 }
 
+// Per-function layout: every PF on its own /24, two PFs per PCI root.
+static void perFunction(uint8_t gids[4][16], char roots[4][11]) {
+  valid(gids, roots);
+  for (int i = 0; i < 4; ++i) { gids[i][14] = uint8_t(i); gids[i][15] = 1; }
+}
+
 int main() {
   // Device 2 must remain selected even when other devices sort before it.
   for (int selected = 0; selected < 4; ++selected) {
@@ -87,5 +93,37 @@ int main() {
     assert(switchlessValidateListener(gids, roots, 4, true) != nullptr);
     gids[0][12] = saved;
   }
-  std::puts("listener contract: 24 dual-PF permutations, two-PF and invalid cases passed");
+  // Per-function /24 addressing (NVIDIA p0-to-p1 playbook style).
+  perFunction(gids, roots);
+  {
+    int order2[] = {0, 1, 2, 3}, n = 0;
+    do {
+      for (int i = 0; i < 4; ++i) {
+        std::memcpy(orderedGids[i], gids[order2[i]], 16);
+        std::memcpy(orderedRoots[i], roots[order2[i]], 11);
+      }
+      assert(switchlessValidateListener(orderedGids, orderedRoots, 4, true) == nullptr);
+      ++n;
+    } while (std::next_permutation(order2, order2 + 4));
+    assert(n == 24);
+  }
+  perFunction(gids, roots); gids[3][14] = gids[2][14];           // three subnets: refused
+  assert(switchlessValidateListener(gids, roots, 4, true) != nullptr);
+  perFunction(gids, roots); std::memcpy(roots[1], roots[0], 11); // three PFs on one root
+  assert(switchlessValidateListener(gids, roots, 4, true) != nullptr);
+  perFunction(gids, roots); std::memcpy(roots[3], "pci0003:00", 11); // third root
+  assert(switchlessValidateListener(gids, roots, 4, true) != nullptr);
+  perFunction(gids, roots); std::memcpy(gids[3], gids[0], 16);    // duplicate GID
+  assert(switchlessValidateListener(gids, roots, 4, true) != nullptr);
+  perFunction(gids, roots); gids[2][12] = 127;                     // loopback
+  assert(switchlessValidateListener(gids, roots, 4, true) != nullptr);
+  // Per-cable layout with both PFs of one cable on the same root: refused.
+  valid(gids, roots);
+  std::memcpy(roots[0], "pci0000:00", 11); std::memcpy(roots[1], "pci0000:00", 11);
+  std::memcpy(roots[2], "pci0002:00", 11); std::memcpy(roots[3], "pci0002:00", 11);
+  assert(switchlessValidateListener(gids, roots, 4, true) != nullptr);
+  // Two-PF mode with per-function addresses: two different /24s pass.
+  perFunction(gids, roots);
+  assert(switchlessValidateListener(gids, roots, 2, false) == nullptr);
+  std::puts("listener contract: per-cable and per-function four-PF layouts (24 permutations each), two-PF and invalid cases passed");
 }

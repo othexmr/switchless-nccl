@@ -26,7 +26,11 @@ existing three:
 - **Strict listener admission** in switchless mode (`NCCL_SWITCHLESS_RING_ONLY=1`,
   or the legacy `NCCL_SKIP_TREE_CONNECT`).
   - **Two-PF mode:** exactly two cable /24 subnets.
-  - **Four-PF mode:** the full two-cable × two-PCI-root cross product.
+  - **Four-PF mode:** two PFs on each of two PCI roots, in either addressing
+    layout:
+    - **per cable:** two /24s, one per cable, each holding one PF from each PCI root;
+    - **per function:** four distinct /24s, one per PF, as in NVIDIA's p0-to-p1
+      clustering playbook.
   - **Refused:** duplicates, truncated lists, more than four candidates, and
     network, broadcast, loopback, zero or multicast addresses.
   - **Fabric:** any unicast IPv4 fabric works. A cable is identified by the full
@@ -88,7 +92,7 @@ python3 scripts/render-dual-pf-env.py node.json > node.env && . ./node.env
 | Field | Meaning |
 |---|---|
 | `hcas` | Four exact HCA names |
-| `fabric_addresses` | The four local IPv4 addresses, in the same order as `hcas`. They must be two per cable /24, on two different /24s. |
+| `fabric_addresses` | The four local IPv4 addresses, in the same order as `hcas`: either two per cable /24 on two different /24s, or four distinct per-function /24s. |
 | `fabric_cidr` | A CIDR containing all four addresses |
 | `socket_ifname` | The management interface for NCCL and Gloo bootstrap |
 
@@ -155,7 +159,7 @@ collective benchmark on one fabric, not an end-to-end serving result.
 
 - Ring only. Tree, PAT, diagonal P2P, IPv6, generic InfiniBand and two-node
   setups are not covered.
-- The cable identity rule assumes /24 subnets per cable.
+- Addresses are matched by /24 prefix: one /24 per cable, or one per PF.
 
 ## Attribution
 
