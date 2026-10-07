@@ -23,3 +23,11 @@ OpenFaaS Ltd, and distributed under this project's Apache-2.0 licence.
 The switchless skip-Tree/skip-PAT approach was first published in
 `josephdrose/nccl-spark-switchless`. That repository declares no licence.
 This repository contains no source from it and records conceptual credit only.
+
+## Optional dual-PF source profile
+
+The optional fourth patch, two listener repair patches and source-preparation
+integration are distributed
+under Apache-2.0. The patch retains NVIDIA context and the attributed
+SparkRing / OpenFaaS predecessor. See [dual-PF provenance](docs/dual-pf.md#attribution).
+The historical source snapshot and rebuilt binaries have separate identities.
