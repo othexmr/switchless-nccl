@@ -125,6 +125,32 @@ Before serving with a rebuilt library, run a four-rank collective test with
 changing payloads (eager and CUDA graph). Confirm from the route diagnostics and
 per-HCA counters that all four PFs carry traffic.
 
+## Measured results
+
+Measured on a four-Spark switchless cycle (DGX Spark, CUDA 13.0, NCCL 2.30.7). Each Spark is direct-cabled to its two
+neighbours, with two PFs per cable on separate PCI roots. The library was built from this branch: patched tree
+`3b71d59c`, aarch64 `libnccl.so.2.30.7`, SHA256 `7c76d65e…0fd3`. Every rank loaded identical bytes.
+
+The run compared this profile (all four PFs) with this repository's default two-PF release. Both ran the same
+four-rank BF16 all-reduce sweep, 4 KiB to 256 MiB, in interleaved rounds. The figures are pooled median bus bandwidth
+over two rounds and four ranks:
+
+| Message | Four-PF profile | Two-PF release | Gain |
+|---|---:|---:|---:|
+| 16 MiB | 22.50 GB/s | 13.46 GB/s | 1.67× |
+| 64 MiB | 22.92 GB/s | 13.52 GB/s | 1.70× |
+| 256 MiB | 23.23 GB/s | 13.79 GB/s | 1.68× |
+
+The run also checked:
+
+- **Correctness:** three changing payloads per size, eager and through a CUDA-graph replay, were bitwise exact on
+  every rank and size.
+- **Engagement:** per-HCA `port_xmit_data` counters show every used port splitting traffic 30–70 % across its two PFs.
+  The route diagnostics show every rank connecting on all four HCAs, on both PCI roots.
+
+Small messages (≤ 1 MiB) were within run-to-run noise of the two-PF release and are not claimed. This is a
+collective benchmark on one fabric, not an end-to-end serving result.
+
 ## Limits
 
 - Ring only. Tree, PAT, diagonal P2P, IPv6, generic InfiniBand and two-node
