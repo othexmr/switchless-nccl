@@ -53,9 +53,10 @@ Build it on an ARM64 Linux host with Docker:
 ./scripts/package-nccl.sh ./nccl-patched ./bin
 ```
 
-The host does not need a GPU. Every successful ARM64 CI run uploads the
-checksummed bundle as an Actions artifact. A repository release/tag publishes
-the same archive and checksum as durable release assets.
+The host does not need a GPU. ARM64 CI uploads checksummed bundles as Actions artifacts.
+The existing tag-triggered publish workflow builds both profiles and publishes two distinct archives with checksums.
+If either profile fails, the workflow does not upload release assets.
+The default installer selects the two-PF archive.
 
 ## Fabric configuration
 
@@ -147,5 +148,17 @@ under Apache-2.0. See [`NOTICE`](NOTICE) and
 For a cycle where each Spark reaches each neighbour through two PCIe-root
 functions (four RoCE PFs per node), an opt-in source profile adds four-GID
 listener advertisement, PCI-root-preserving routing and strict listener
-admission. It does not change the default two-device release. See
+admission. Its release archive has a separate name from the default two-device archive.
+Select it explicitly:
+
+```bash
+./scripts/install-release.sh --profile four-pf --repository othexmr/switchless-nccl \
+  vX.Y.Z "$HOME/nccl-switchless-four-pf-vX.Y.Z"
+```
+
+Replace `vX.Y.Z` with a tag that includes the four-PF archive.
+Omit `--repository` for releases from `alexellis/switchless-nccl`.
+The archive includes configuration examples, all four patches, licenses, and source and build receipts.
+The receipts identify a compiled library. They do not establish serving qualification.
+See
 [docs/dual-pf.md](docs/dual-pf.md).

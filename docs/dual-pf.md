@@ -4,8 +4,10 @@ An opt-in NCCL build for a four-Spark switchless cycle where each Spark reaches
 each neighbour through **two PCIe-root functions**. That gives four RoCE PFs per
 node: two per cable, one on each PCI root.
 
-The default two-device build, release, installer and packager are unchanged.
-Nothing here takes effect unless you build this profile and set its environment.
+The default two-device build and archive keep their existing identity.
+The tag-triggered publish workflow also builds and packages this profile as a separate release asset.
+The installer selects it only with `--profile four-pf`.
+This profile takes effect only with its library and environment.
 
 ## What it adds
 
@@ -76,9 +78,37 @@ Or build in the pinned CUDA container on any ARM64 Linux host with Docker:
 ./scripts/build-dual-pf-ci.sh /absolute/path/to/new-dir
 ```
 
-Ship NCCL's `LICENSE.txt` and `ThirdPartyNotices.txt` with any library you
-distribute. This profile has its own identity, so don't use the default
-release packager, installer or binary verifier for it.
+The four-PF packager checks the source tree, binary markers, licenses, and source and build receipts:
+
+```sh
+python3 ./scripts/package-dual-pf.py package /absolute/path/to/new-dir ./bin
+```
+
+It creates `nccl-2.30.7-switchless-four-pf-sm121-linux-arm64.tar.gz` and its checksum.
+The archive includes NCCL licenses, all four patches, configuration files, and receipts.
+It preserves `runtime_qualified: false` because compilation does not establish collective or serving qualification.
+The default two-PF packager and binary verifier remain specific to the two-PF profile.
+
+## Release installation
+
+Use the scripts from the matching release tag.
+Select the four-PF profile explicitly:
+
+```sh
+./scripts/install-release.sh --profile four-pf --repository othexmr/switchless-nccl \
+  vX.Y.Z "$HOME/nccl-switchless-four-pf-vX.Y.Z"
+```
+
+Replace `vX.Y.Z` with a published tag that includes the four-PF archive.
+Omit `--repository` for releases from `alexellis/switchless-nccl`.
+The installer checks the archive checksum, every file checksum, the pinned profile, receipts, binary markers, and symlinks.
+It refuses an existing destination.
+It copies files into that destination and does not change a service, network, or system library.
+Use the included `scripts/render-dual-pf-env.py` and `examples/dual-pf.json` to configure each rank.
+
+The existing publish job builds and packages both profiles before it uploads any release assets.
+A four-PF failure stops the upload and retains build evidence as an Actions artifact.
+No second publish workflow is required.
 
 ## Configure
 

@@ -6,10 +6,27 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=versions.sh
 source "$ROOT/scripts/versions.sh"
 
-RELEASE=${1:?usage: install-release.sh RELEASE [DESTINATION]}
-DESTINATION=${2:-"$HOME/nccl-switchless-$RELEASE"}
+PROFILE=two-pf
+REPOSITORY=alexellis/switchless-nccl
+while [[ ${1:-} == --* ]]; do
+  case "$1" in
+    --profile) PROFILE=${2:?--profile requires two-pf or four-pf}; shift 2 ;;
+    --repository) REPOSITORY=${2:?--repository requires OWNER/REPO}; shift 2 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+case "$PROFILE" in
+  two-pf) destination_name=nccl-switchless ;;
+  four-pf) PACKAGE_NAME=$FOUR_PF_PACKAGE_NAME; destination_name=nccl-switchless-four-pf ;;
+  *) echo 'profile must be two-pf or four-pf' >&2; exit 2 ;;
+esac
+[[ $REPOSITORY =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
+  echo 'repository must be OWNER/REPO' >&2; exit 2;
+}
+RELEASE=${1:?usage: install-release.sh [--profile two-pf|four-pf] [--repository OWNER/REPO] RELEASE [DESTINATION]}
+DESTINATION=${2:-"$HOME/$destination_name-$RELEASE"}
 ASSET="$PACKAGE_NAME.tar.gz"
-BASE_URL="https://github.com/alexellis/switchless-nccl/releases/download/$RELEASE"
+BASE_URL="https://github.com/$REPOSITORY/releases/download/$RELEASE"
 
 case "$RELEASE" in
   v[0-9]*.[0-9]*.[0-9]*) ;;
@@ -19,10 +36,10 @@ case "$RELEASE" in
     ;;
 esac
 
-test ! -e "$DESTINATION" || {
+if [[ -e "$DESTINATION" || -L "$DESTINATION" ]]; then
   echo "destination already exists: $DESTINATION" >&2
   exit 2
-}
+fi
 
 for command in curl mv readlink sha256sum tar; do
   command -v "$command" >/dev/null || {
@@ -47,7 +64,11 @@ curl -fsSLo "$DOWNLOAD_DIR/$ASSET.sha256" "$BASE_URL/$ASSET.sha256"
   sha256sum --check "$ASSET.sha256"
 )
 
-tar -xzf "$DOWNLOAD_DIR/$ASSET" -C "$DOWNLOAD_DIR"
+if [[ $PROFILE == four-pf ]]; then
+  python3 "$ROOT/scripts/package-dual-pf.py" unpack "$DOWNLOAD_DIR/$ASSET" "$DOWNLOAD_DIR"
+else
+  tar -xzf "$DOWNLOAD_DIR/$ASSET" -C "$DOWNLOAD_DIR"
+fi
 STAGED="$DOWNLOAD_DIR/$PACKAGE_NAME"
 test -d "$STAGED"
 (
