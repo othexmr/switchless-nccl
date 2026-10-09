@@ -40,6 +40,17 @@ def install(args, env):
                           env=env, capture_output=True, text=True)
 
 
+def restricted_installer_env(parent, assets, missing=()):
+    env = installer_env(parent, assets)
+    # Expose only named tools so system PATH cannot satisfy a missing dependency.
+    for name in ('bash', 'dirname', 'mv', 'readlink', 'sha256sum', 'tar', 'gzip', 'mktemp', 'rm', 'cp',
+                 'mkdir', 'python3', 'readelf', 'strings'):
+        if name not in missing:
+            (parent/'bin'/name).symlink_to(shutil.which(name))
+    env['PATH'] = str(parent/'bin')
+    return env
+
+
 def archive_bundle(bundle, assets):
     assets.mkdir(exist_ok=True)
     asset = assets/(bundle.name+'.tar.gz')
@@ -295,6 +306,15 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual((parent/'urls').read_text().splitlines(),
                              [prefix+asset.name, prefix+asset.name+'.sha256'])
             urls = [prefix+asset.name, prefix+asset.name+'.sha256']
+            # The legacy installer must still work without any four-PF-only tool.
+            restricted = parent/'restricted'; restricted.mkdir()
+            restricted_env = restricted_installer_env(
+                restricted, asset.parent, missing=('python3', 'readelf', 'strings'))
+            destination = restricted/'installed'
+            result = install(['--profile', 'two-pf', 'v0.0.1', destination], restricted_env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((destination/library.name).read_bytes(), library.read_bytes())
+            self.assertEqual((restricted/'urls').read_text().splitlines(), urls)
             for args, destination in (
                 (['v0.0.1', '--profile', 'two-pf'], parent/'home/nccl-switchless-v0.0.1'),
                 (['v0.0.1', parent/'installed with spaces', '--profile', 'two-pf'],
@@ -348,7 +368,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('if: always()', workflow[upload:])
         self.assertIn('asset_paths: \'["./bin/*"]\'', workflow)
 
-    def test_invalid_profile_and_repository_refused_before_download(self):
+    def test_invalid_input_and_missing_dependencies_refused_before_download(self):
         cases = (['--profile', 'unknown', 'v0.1.0'],
                  ['v0.1.0', '--profile', 'unknown'],
                  ['--repository', 'owner/repo/extra', 'v0.1.0'],
@@ -365,6 +385,24 @@ class WorkflowTests(unittest.TestCase):
                     result = install(args, env)
                     self.assertEqual(result.returncode, 2, result.stderr)
                     self.assertFalse((parent/'urls').exists(), result.stderr)
+        for missing in ('python3', 'readelf', 'strings', 'old-python'):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
+                parent = Path(tmp)
+                omitted = 'python3' if missing == 'old-python' else missing
+                env = restricted_installer_env(parent, parent/'no-assets', missing=(omitted,))
+                if missing == 'old-python':
+                    python = parent/'bin/python3'
+                    python.write_text('#!/bin/sh\nexit 1\n')
+                    python.chmod(0o755)
+                    error = 'four-PF installation requires Python 3.11 or newer'
+                else:
+                    error = 'missing required command: '+missing
+                destination = parent/'installed'
+                result = install(['v0.1.0', destination], env)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(error, result.stderr)
+                self.assertFalse((parent/'urls').exists(), result.stderr)
+                self.assertFalse(destination.exists())
 
 
 if __name__ == '__main__':

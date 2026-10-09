@@ -54,12 +54,21 @@ if [[ -e "$DESTINATION" || -L "$DESTINATION" ]]; then
   exit 2
 fi
 
-for command in curl mv readlink sha256sum tar; do
+required_commands=(curl mv readlink sha256sum tar)
+if [[ $PROFILE == four-pf ]]; then
+  required_commands+=(python3 readelf strings)
+fi
+for command in "${required_commands[@]}"; do
   command -v "$command" >/dev/null || {
     echo "missing required command: $command" >&2
     exit 1
   }
 done
+
+if [[ $PROFILE == four-pf ]] && ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+  echo 'four-PF installation requires Python 3.11 or newer' >&2
+  exit 1
+fi
 
 DOWNLOAD_DIR=$(mktemp -d)
 cleanup() {

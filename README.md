@@ -151,8 +151,8 @@ For a cycle where each Spark reaches each neighbour through two PCIe-root
 functions (four RoCE PFs per node), a source profile adds four-GID
 listener advertisement, PCI-root-preserving routing and strict listener
 admission. It is the installer default and takes effect only with its library and environment.
-Its release archive has a separate name from the two-device archive. For that archive, pass
-`--profile two-pf`.
+The four-PF release archive has a separate name from the two-device archive.
+To install the two-PF archive instead, pass `--profile two-pf`.
 
 ```bash
 ./scripts/install-release.sh --repository othexmr/switchless-nccl \

@@ -91,7 +91,10 @@ The two-PF packager and binary verifier remain specific to the two-PF profile.
 
 ## Release installation
 
-Use this installer with a published release tag. The four-PF profile is the installer default:
+Use this installer with a published release tag. The four-PF profile is the installer default.
+
+Four-PF installation requires Python 3.11 or newer, `readelf`, and `strings`
+in addition to the two-PF installer tools. These requirements are checked before downloading.
 
 ```sh
 ./scripts/install-release.sh --repository othexmr/switchless-nccl \
