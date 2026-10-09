@@ -4,9 +4,9 @@ An opt-in NCCL build for a four-Spark switchless cycle where each Spark reaches
 each neighbour through **two PCIe-root functions**. That gives four RoCE PFs per
 node: two per cable, one on each PCI root.
 
-The default two-device build and archive keep their existing identity.
+The two-device build and archive keep their existing identity.
 The tag-triggered publish workflow also builds and packages this profile as a separate release asset.
-The installer selects it only with `--profile four-pf`.
+The installer selects this profile by default. `--profile two-pf` selects the two-device archive.
 This profile takes effect only with its library and environment.
 
 ## What it adds
@@ -87,21 +87,22 @@ python3 ./scripts/package-dual-pf.py package /absolute/path/to/new-dir ./bin
 It creates `nccl-2.30.7-switchless-four-pf-sm121-linux-arm64.tar.gz` and its checksum.
 The archive includes NCCL licenses, all four patches, configuration files, and receipts.
 It preserves `runtime_qualified: false` because compilation does not establish collective or serving qualification.
-The default two-PF packager and binary verifier remain specific to the two-PF profile.
+The two-PF packager and binary verifier remain specific to the two-PF profile.
 
 ## Release installation
 
-Use the scripts from the matching release tag.
-Select the four-PF profile explicitly:
+Use this installer with a published release tag. The four-PF profile is the installer default:
 
 ```sh
-./scripts/install-release.sh --profile four-pf --repository othexmr/switchless-nccl \
+./scripts/install-release.sh --repository othexmr/switchless-nccl \
   vX.Y.Z "$HOME/nccl-switchless-four-pf-vX.Y.Z"
 ```
 
 Replace `vX.Y.Z` with a published tag that includes the four-PF archive.
+A default install of a release without it, such as v0.0.1, fails and names
+`--profile two-pf` in its error. It does not fall back silently.
 Omit `--repository` for releases from `alexellis/switchless-nccl`.
-The installer checks the archive checksum, every file checksum, the pinned profile, receipts, binary markers, and symlinks.
+For the four-PF archive, the installer checks the archive checksum, every file checksum, the pinned profile, receipts, binary markers, and symlinks.
 It refuses an existing destination.
 It copies files into that destination and does not change a service, network, or system library.
 Use the included `scripts/render-dual-pf-env.py` and `examples/dual-pf.json` to configure each rank.
@@ -165,7 +166,7 @@ Measured on a four-Spark switchless cycle (DGX Spark, CUDA 13.0, NCCL 2.30.7). E
 neighbours, with two PFs per cable on separate PCI roots. The library was built from this branch: patched tree
 `3b71d59c`, aarch64 `libnccl.so.2.30.7`, SHA256 `7c76d65e…0fd3`. Every rank loaded identical bytes.
 
-The run compared this profile (all four PFs) with this repository's default two-PF release. Both ran the same
+The run compared this profile (all four PFs) with this repository's two-PF release. Both ran the same
 four-rank BF16 all-reduce sweep, 4 KiB to 256 MiB, in interleaved rounds. The figures are pooled median bus bandwidth
 over two rounds and four ranks:
 

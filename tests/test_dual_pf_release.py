@@ -24,6 +24,31 @@ release = module('dual_pf_release', 'scripts/package-dual-pf.py')
 prep = module('dual_pf_prepare_release', 'scripts/prepare_dual_pf.py')
 
 
+def installer_env(parent, assets):
+    stubs = parent/'bin'; stubs.mkdir()
+    curl = stubs/'curl'
+    curl.write_text('#!/bin/sh\n'
+                    'printf "%s\\n" "$3" >> "$CURL_CALLS"\n'
+                    'cp "$TEST_ASSETS/${3##*/}" "$2"\n')
+    curl.chmod(0o755)
+    return dict(os.environ, PATH=str(stubs)+os.pathsep+os.environ['PATH'],
+                TEST_ASSETS=str(assets), CURL_CALLS=str(parent/'urls'), HOME=str(parent/'home'))
+
+
+def install(args, env):
+    return subprocess.run(['bash', str(ROOT/'scripts/install-release.sh'), *map(str, args)],
+                          env=env, capture_output=True, text=True)
+
+
+def archive_bundle(bundle, assets):
+    assets.mkdir(exist_ok=True)
+    asset = assets/(bundle.name+'.tar.gz')
+    with tarfile.open(asset, 'w:gz') as out:
+        out.add(bundle, arcname=bundle.name)
+    Path(str(asset)+'.sha256').write_text(f'{release.sha(asset)}  {asset.name}\n')
+    return asset
+
+
 @unittest.skipUnless(os.getenv('NCCL_SOURCE') and shutil.which('clang') and shutil.which('ld.lld'),
                      'pinned NCCL_SOURCE, clang and ld.lld required for CPU package fixtures')
 class ReleaseTests(unittest.TestCase):
@@ -89,9 +114,11 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(first.read_bytes(), before)
 
     def test_corrupt_payload_wrong_profile_and_missing_patch_refused(self):
-        for kind in ('library', 'profile', 'patch', 'symlink', 'extra'):
+        for kind in ('library', 'profile', 'patch', 'symlink', 'soname-symlink',
+                     'extra', 'receipt', 'source-receipt', 'marker'):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
-                bundle = self.unpack_fixture(Path(tmp))
+                parent = Path(tmp)
+                bundle = self.unpack_fixture(parent)
                 if kind == 'library':
                     (bundle/self.library.name).write_bytes(b'corrupt')
                 elif kind == 'profile':
@@ -104,13 +131,51 @@ class ReleaseTests(unittest.TestCase):
                         for line in sums.read_text().splitlines())+'\n')
                 elif kind == 'patch':
                     (bundle/self.profile['patches'][-1]['path']).unlink()
-                elif kind == 'symlink':
-                    (bundle/'libnccl.so').unlink()
-                    (bundle/'libnccl.so').symlink_to('/tmp/wrong-library')
-                else:
+                elif kind in ('symlink', 'soname-symlink'):
+                    name = 'libnccl.so' if kind == 'symlink' else 'libnccl.so.2'
+                    (bundle/name).unlink()
+                    (bundle/name).symlink_to('/tmp/wrong-library')
+                elif kind == 'extra':
                     (bundle/'untracked.txt').write_text('unexpected')
+                elif kind == 'receipt':
+                    receipt = bundle/'build-receipt.json'
+                    data = json.loads(receipt.read_text())
+                    data['runtime_qualified'] = True
+                    receipt.write_text(json.dumps(data))
+                elif kind == 'source-receipt':
+                    receipt = bundle/'source-receipt.json'
+                    data = json.loads(receipt.read_text())
+                    data['base'] = '0'*40
+                    receipt.write_text(json.dumps(data))
+                else:
+                    library = bundle/self.library.name
+                    marker = release.MARKERS[0].encode()
+                    self.assertIn(marker, library.read_bytes())
+                    library.write_bytes(library.read_bytes().replace(marker, b'X'*len(marker)))
+                    for name in ('build-receipt.json', 'release-profile.json'):
+                        path = bundle/name
+                        data = json.loads(path.read_text())
+                        data['library_sha256'] = release.sha(library)
+                        path.write_text(json.dumps(data))
+                if kind in ('receipt', 'source-receipt', 'marker'):
+                    sums = bundle/'SHA256SUMS'
+                    names = [line.split('  ', 1)[1] for line in sums.read_text().splitlines()]
+                    sums.write_text(''.join(f'{release.sha(bundle/name)}  {name}\n'
+                                           for name in names))
                 with self.assertRaises((ValueError, FileNotFoundError)):
                     release.verify_bundle(bundle)
+                assets = parent/'corrupt-assets'
+                archive_bundle(bundle, assets)
+                destination = parent/'installed'
+                result = install(['v0.1.0', destination], installer_env(parent, assets))
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertFalse(destination.exists())
+                if kind == 'receipt':
+                    self.assertIn('build receipt mismatch', result.stderr)
+                elif kind == 'source-receipt':
+                    self.assertIn('source receipt pin mismatch', result.stderr)
+                elif kind == 'marker':
+                    self.assertIn('missing four-PF binary marker', result.stderr)
 
     def test_failed_build_and_modified_source_produce_no_asset(self):
         receipt = self.build/'build-receipt.json'
@@ -135,33 +200,64 @@ class ReleaseTests(unittest.TestCase):
             receipt.write_bytes(original)
             tracked.write_bytes(source_bytes)
 
-    def test_installer_selects_four_pf_asset_in_requested_repository(self):
+    def test_default_installer_selects_four_pf_asset_in_requested_repository(self):
         with tempfile.TemporaryDirectory() as tmp:
             parent = Path(tmp)
             assets = parent/'assets'
             release.package(self.build, assets)
-            stubs = parent/'bin'; stubs.mkdir()
-            curl = stubs/'curl'
-            curl.write_text('#!/bin/sh\n'
-                            'printf "%s\\n" "$3" >> "$CURL_CALLS"\n'
-                            'cp "$TEST_ASSETS/${3##*/}" "$2"\n')
-            curl.chmod(0o755)
-            env = dict(os.environ, PATH=str(stubs)+os.pathsep+os.environ['PATH'],
-                       TEST_ASSETS=str(assets), CURL_CALLS=str(parent/'urls'))
+            env = installer_env(parent, assets)
             destination = parent/'installed'
             result = subprocess.run(['bash', str(ROOT/'scripts/install-release.sh'),
-                '--profile', 'four-pf', '--repository', 'othexmr/switchless-nccl',
+                '--repository', 'othexmr/switchless-nccl',
                 'v0.1.0', str(destination)], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(release.verify_bundle(destination)['profile'], 'four-pf')
             urls = (parent/'urls').read_text().splitlines()
             prefix = 'https://github.com/othexmr/switchless-nccl/releases/download/v0.1.0/'
-            self.assertEqual(urls, [prefix+assets.name for assets in sorted(assets.iterdir())])
+            asset_name = self.values['FOUR_PF_PACKAGE_NAME']+'.tar.gz'
+            self.assertEqual(urls, [prefix+asset_name, prefix+asset_name+'.sha256'])
             again = subprocess.run(['bash', str(ROOT/'scripts/install-release.sh'),
-                '--profile', 'four-pf', 'v0.1.0', str(destination)],
+                'v0.1.0', str(destination)],
                 env=env, capture_output=True, text=True)
             self.assertEqual(again.returncode, 2)
             self.assertEqual((parent/'urls').read_text().splitlines(), urls)
+            for args, destination in (
+                (['v0.1.0', '--repository', 'othexmr/switchless-nccl'],
+                 parent/'home/nccl-switchless-four-pf-v0.1.0'),
+                (['v0.1.0', parent/'installed with spaces', '--profile', 'four-pf',
+                  '--repository', 'othexmr/switchless-nccl'], parent/'installed with spaces'),
+            ):
+                with self.subTest(args=args):
+                    (parent/'urls').unlink()
+                    result = install(args, env)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(release.verify_bundle(destination)['profile'], 'four-pf')
+                    self.assertEqual((parent/'urls').read_text().splitlines(), urls)
+            for kind in ('file', 'dangling-symlink'):
+                destination = parent/kind
+                if kind == 'file':
+                    destination.write_text('existing')
+                else:
+                    destination.symlink_to(parent/'missing')
+                result = install(['v0.1.0', destination], env)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual((parent/'urls').read_text().splitlines(), urls)
+            # A valid download with a bad outer checksum must never install.
+            (assets/(asset_name+'.sha256')).write_text('0'*64+'  '+asset_name+'\n')
+            result = install(['v0.1.0', parent/'bad-checksum'], env)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((parent/'bad-checksum').exists())
+            # Old releases contain only the two-PF archive; no fallback is allowed.
+            missing = parent/'old-release'; missing.mkdir()
+            (missing/(self.values['PACKAGE_NAME']+'.tar.gz')).write_bytes(b'two-PF asset')
+            env['TEST_ASSETS'] = str(missing)
+            (parent/'urls').unlink()
+            result = install(['v0.0.1'], env)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('--profile two-pf', result.stderr)
+            self.assertEqual((parent/'urls').read_text().splitlines(),
+                ['https://github.com/alexellis/switchless-nccl/releases/download/v0.0.1/'+asset_name])
+            self.assertFalse((parent/'home/nccl-switchless-four-pf-v0.0.1').exists())
 
     def test_archive_escape_is_refused_without_writing_outside_stage(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -178,7 +274,7 @@ class ReleaseTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_default_installer_keeps_two_pf_asset_and_repository(self):
+    def test_two_pf_installer_keeps_two_pf_asset_and_repository(self):
         values, _ = release.pins()
         with tempfile.TemporaryDirectory() as tmp:
             parent = Path(tmp)
@@ -188,26 +284,58 @@ class WorkflowTests(unittest.TestCase):
             (bundle/'libnccl.so.2').symlink_to(library.name)
             (bundle/'libnccl.so').symlink_to('libnccl.so.2')
             (bundle/'SHA256SUMS').write_text(f'{release.sha(library)}  {library.name}\n')
-            asset = parent/(values['PACKAGE_NAME']+'.tar.gz')
-            with tarfile.open(asset, 'w:gz') as out:
-                out.add(bundle, arcname=bundle.name)
-            Path(str(asset)+'.sha256').write_text(f'{release.sha(asset)}  {asset.name}\n')
-            stubs = parent/'bin'; stubs.mkdir()
-            curl = stubs/'curl'
-            curl.write_text('#!/bin/sh\n'
-                            'printf "%s\\n" "$3" >> "$CURL_CALLS"\n'
-                            'cp "$TEST_ASSETS/${3##*/}" "$2"\n')
-            curl.chmod(0o755)
-            env = dict(os.environ, PATH=str(stubs)+os.pathsep+os.environ['PATH'],
-                       TEST_ASSETS=str(parent), CURL_CALLS=str(parent/'urls'))
+            asset = archive_bundle(bundle, parent/'assets')
+            env = installer_env(parent, asset.parent)
             destination = parent/'installed'
             result = subprocess.run(['bash', str(ROOT/'scripts/install-release.sh'),
-                'v0.0.1', str(destination)], env=env, capture_output=True, text=True)
+                '--profile', 'two-pf', 'v0.0.1', str(destination)], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((destination/library.name).read_bytes(), library.read_bytes())
             prefix = 'https://github.com/alexellis/switchless-nccl/releases/download/v0.0.1/'
             self.assertEqual((parent/'urls').read_text().splitlines(),
                              [prefix+asset.name, prefix+asset.name+'.sha256'])
+            urls = [prefix+asset.name, prefix+asset.name+'.sha256']
+            for args, destination in (
+                (['v0.0.1', '--profile', 'two-pf'], parent/'home/nccl-switchless-v0.0.1'),
+                (['v0.0.1', parent/'installed with spaces', '--profile', 'two-pf'],
+                 parent/'installed with spaces'),
+            ):
+                with self.subTest(args=args):
+                    (parent/'urls').unlink()
+                    result = install(args, env)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual((destination/library.name).read_bytes(), library.read_bytes())
+                    self.assertEqual((parent/'urls').read_text().splitlines(), urls)
+            for kind in ('directory', 'file', 'dangling-symlink'):
+                destination = parent/('existing-'+kind)
+                if kind == 'directory':
+                    destination.mkdir()
+                elif kind == 'file':
+                    destination.write_text('existing')
+                else:
+                    destination.symlink_to(parent/'missing')
+                result = install(['v0.0.1', destination, '--profile', 'two-pf'], env)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual((parent/'urls').read_text().splitlines(), urls)
+            for kind in ('archive-checksum', 'payload-checksum', 'symlink', 'soname-symlink'):
+                with self.subTest(kind=kind):
+                    if kind == 'payload-checksum':
+                        library.write_bytes(b'corrupt')
+                    elif kind in ('symlink', 'soname-symlink'):
+                        # Restore the other link so each refusal tests only one bad link.
+                        (bundle/'libnccl.so').unlink()
+                        (bundle/'libnccl.so').symlink_to('libnccl.so.2')
+                        name = 'libnccl.so' if kind == 'symlink' else 'libnccl.so.2'
+                        (bundle/name).unlink()
+                        (bundle/name).symlink_to('/tmp/wrong-library')
+                        library.write_bytes(b'CPU two-PF installer compatibility fixture')
+                    asset = archive_bundle(bundle, asset.parent)
+                    if kind == 'archive-checksum':
+                        Path(str(asset)+'.sha256').write_text('0'*64+'  '+asset.name+'\n')
+                    destination = parent/('bad-'+kind)
+                    result = install(['--profile', 'two-pf', 'v0.0.1', destination], env)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(destination.exists())
 
     def test_one_publish_job_uploads_only_after_both_packages(self):
         workflow = (ROOT/'.github/workflows/publish.yml').read_text()
@@ -221,11 +349,22 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('asset_paths: \'["./bin/*"]\'', workflow)
 
     def test_invalid_profile_and_repository_refused_before_download(self):
-        for args in (['--profile', 'unknown'], ['--repository', 'owner/repo/extra']):
-            with self.subTest(args=args):
-                result = subprocess.run(['bash', str(ROOT/'scripts/install-release.sh'),
-                    *args, 'v0.1.0'], capture_output=True, text=True)
-                self.assertEqual(result.returncode, 2)
+        cases = (['--profile', 'unknown', 'v0.1.0'],
+                 ['v0.1.0', '--profile', 'unknown'],
+                 ['--repository', 'owner/repo/extra', 'v0.1.0'],
+                 ['v0.1.0', '--repository', 'owner/repo/extra'],
+                 ['v0.1.0', '--profile'], ['v0.1.0', '--repository'],
+                 ['--profile', '--repository', 'v0.1.0'],
+                 ['v0.1.0', '--profile', ''], ['v0.1.0', '--unknown'],
+                 [], ['v0.1.0', 'destination', 'extra'])
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp)
+            env = installer_env(parent, parent/'no-assets')
+            for args in cases:
+                with self.subTest(args=args):
+                    result = install(args, env)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertFalse((parent/'urls').exists(), result.stderr)
 
 
 if __name__ == '__main__':

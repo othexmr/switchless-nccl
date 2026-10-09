@@ -6,15 +6,28 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=versions.sh
 source "$ROOT/scripts/versions.sh"
 
-PROFILE=two-pf
+PROFILE=four-pf
 REPOSITORY=alexellis/switchless-nccl
-while [[ ${1:-} == --* ]]; do
+POSITIONAL=()
+while (( $# )); do
   case "$1" in
-    --profile) PROFILE=${2:?--profile requires two-pf or four-pf}; shift 2 ;;
-    --repository) REPOSITORY=${2:?--repository requires OWNER/REPO}; shift 2 ;;
-    *) echo "unknown option: $1" >&2; exit 2 ;;
+    --profile|--repository)
+      if (( $# < 2 )) || [[ -z $2 || $2 == --* ]]; then
+        echo "$1 requires a value" >&2
+        exit 2
+      fi
+      if [[ $1 == --profile ]]; then PROFILE=$2; else REPOSITORY=$2; fi
+      shift 2
+      ;;
+    --*) echo "unknown option: $1" >&2; exit 2 ;;
+    *) POSITIONAL+=("$1"); shift ;;
   esac
 done
+if (( ${#POSITIONAL[@]} < 1 || ${#POSITIONAL[@]} > 2 )); then
+  echo 'usage: install-release.sh [--profile two-pf|four-pf] [--repository OWNER/REPO] RELEASE [DESTINATION]' >&2
+  exit 2
+fi
+set -- "${POSITIONAL[@]}"
 case "$PROFILE" in
   two-pf) destination_name=nccl-switchless ;;
   four-pf) PACKAGE_NAME=$FOUR_PF_PACKAGE_NAME; destination_name=nccl-switchless-four-pf ;;
@@ -57,7 +70,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-curl -fsSLo "$DOWNLOAD_DIR/$ASSET" "$BASE_URL/$ASSET"
+if curl -fsSLo "$DOWNLOAD_DIR/$ASSET" "$BASE_URL/$ASSET"; then
+  :
+else
+  download_status=$?
+  if [[ $PROFILE == four-pf ]]; then
+    echo "could not download four-PF asset $ASSET for $RELEASE; if this release has no four-PF archive, use --profile two-pf" >&2
+  fi
+  exit "$download_status"
+fi
 curl -fsSLo "$DOWNLOAD_DIR/$ASSET.sha256" "$BASE_URL/$ASSET.sha256"
 (
   cd "$DOWNLOAD_DIR"
